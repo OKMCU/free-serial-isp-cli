@@ -1,0 +1,9 @@
+fsb --version[-v]
+fsb --help[-h]
+fsb --connect[-c] --port[-p] COM1 --baudrate[-b] 115200
+
+erase --chip --aprom --eeprom
+
+load --aprom aprom.hex --eeprom eeprom.hex
+
+save --aprom aprom.hex --eeprom eeprom.hex
