@@ -1,6 +1,6 @@
-fsb --version[-v]
-fsb --help[-h]
-fsb --connect[-c] --port[-p] COM1 --baudrate[-b] 115200
+fsisp --version[-v]
+fsisp --help[-h]
+fsisp --connect[-c] --port[-p] COM1 --baudrate[-b] 115200
 
 erase --chip --aprom --eeprom
 
