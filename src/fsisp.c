@@ -73,10 +73,55 @@ typedef struct packet_s {
     uint8_t payload[PKT_PLD_SIZE];
 } packet_t;
 
-typedef struct dev_attr_s {
+typedef struct dev_attr_mcu_s {
     char part_number[128];
+    char uuid[128];
+} dev_attr_mcu_t;
+
+typedef struct dev_attr_bldr_s {
+    uint8_t major_ver;
+    uint8_t minor_ver;
+    uint16_t build_ver;
+    uint32_t addr;
+    uint32_t size;
+} dev_attr_bldr_t;
+
+typedef struct dev_attr_s {
+    dev_attr_mcu_t mcu;
+    dev_attr_bldr_t bldr;
 } dev_attr_t;
 /* Private macro -------------------------------------------------------------*/
+/**
+ * break a 32-bit value into bytes
+ */
+#define BREAK_UINT32(var, ByteNum) \
+          (uint8_t)((uint32_t)(((var) >>((ByteNum) * 8)) & 0x00FF))
+
+/**
+ * build a 32-bit value from bytes
+ */
+#define BUILD_UINT32(Byte0, Byte1, Byte2, Byte3) \
+          ((uint32_t)((uint32_t)((Byte0) & 0x00FF) \
+          + ((uint32_t)((Byte1) & 0x00FF) << 8) \
+          + ((uint32_t)((Byte2) & 0x00FF) << 16) \
+          + ((uint32_t)((Byte3) & 0x00FF) << 24)))
+
+/**
+ * build a 16-bit value from bytes
+ */
+#define BUILD_UINT16(loByte, hiByte) \
+          ((uint16_t)(((loByte) & 0x00FF) + (((hiByte) & 0x00FF) << 8)))
+
+/**
+ * break a 16-bit value into bytes
+ */
+#define HI_UINT16(a) (((a) >> 8) & 0xFF)
+#define LO_UINT16(a) ((a) & 0xFF)
+
+/**
+ * bitmask value of one bit
+ */
+#define BIT(n)      (1<<n)
 /* Private function prototypes -----------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
 /* Private functions ---------------------------------------------------------*/
@@ -155,13 +200,13 @@ int parse_options(int argc, char **argv, fsisp_opt_t *opt)
   * @param  payload [I] - points to the payload data
   * @retval 0 = success, -1 = failure
   */
-static int32_t send_packet(com_handle_t hdl, uint8_t type, uint8_t reg_addr, uint8_t length, const uint8_t *payload)
+int32_t send_packet(com_handle_t hdl, uint8_t dev_addr, uint8_t type, uint8_t reg_addr, uint8_t length, const uint8_t *payload)
 {
     uint8_t crc;
     packet_header_t pkt_header;
     if(length > PKT_PLD_SIZE) return -1;
 
-    pkt_header.dev_addr = DEVICE_ADDR;
+    pkt_header.dev_addr = dev_addr;
     pkt_header.type = type;
     pkt_header.reg_addr = reg_addr;
     pkt_header.length = length;
@@ -178,6 +223,64 @@ static int32_t send_packet(com_handle_t hdl, uint8_t type, uint8_t reg_addr, uin
     return 0;
 }
 
+int32_t read_reg(com_handle_t hdl, uint8_t dev_addr, uint8_t reg_addr, uint8_t *pdata, uint8_t size, uint8_t *length, uint32_t timeout)
+{
+    uint8_t rxbuf[256];
+    size_t rxlen;
+    packet_t *pkt = (packet_t *)rxbuf;
+
+    if(send_packet(hdl, dev_addr, TYPE_GET, reg_addr, size, NULL))
+        return -1;
+    if(com_recv(hdl, rxbuf, sizeof(rxbuf), &rxlen, timeout))
+        return -1;
+
+    if(rxlen <= sizeof(packet_header_t) || rxbuf[rxlen-1] != crc8_maxim(rxbuf, rxlen-1))
+        return -1;
+
+    if(pkt->header.dev_addr != dev_addr ||
+       pkt->header.type != TYPE_SET     ||
+       pkt->header.reg_addr != reg_addr ||
+       pkt->header.length > size)
+        return -1;
+
+    if(length) *length = pkt->header.length;
+    memcpy(pdata, pkt->payload, pkt->header.length);
+
+    return 0;
+}
+
+int32_t get_dev_attr(com_handle_t hdl, dev_attr_t *attr)
+{
+    uint8_t payload[128];
+    uint8_t len;
+
+    /* MCU part number */
+    if(read_reg(hdl, DEVICE_ADDR, 0x00, attr->mcu.part_number, sizeof(attr->mcu.part_number), &len, 100))
+        return -1;
+
+    /* MCU UUID */
+    if(read_reg(hdl, DEVICE_ADDR, 0x01, attr->mcu.uuid, sizeof(attr->mcu.uuid), &len, 100))
+        return -1;
+
+    /* Bootloader version */
+    if(read_reg(hdl, DEVICE_ADDR, 0x02, payload, 4, &len, 100))
+        return -1;
+    attr->bldr.major_ver = payload[0];
+    attr->bldr.minor_ver = payload[1];
+    attr->bldr.build_ver = BUILD_UINT16(payload[3], payload[2]);
+
+    /* Bootloader flash address */
+    if(read_reg(hdl, DEVICE_ADDR, 0x03, payload, 4, &len, 100))
+        return -1;
+    attr->bldr.addr = BUILD_UINT32(payload[3], payload[2], payload[1], payload[0]);
+
+    /* Bootloader size */
+    if(read_reg(hdl, DEVICE_ADDR, 0x04, payload, 4, &len, 100))
+        return -1;
+    attr->bldr.size = BUILD_UINT32(payload[3], payload[2], payload[1], payload[0]);
+
+    return 0;
+}
 /* Exported variables --------------------------------------------------------*/
 /* Exported functions --------------------------------------------------------*/
 
@@ -187,11 +290,9 @@ int main(int argc, char **argv)
     int32_t err;
     int32_t baudrate;
     /* buffer to receive uart data */
-    uint8_t rxbuf[256];
-    size_t rxlen;
-    packet_t *pkt = (packet_t *)rxbuf;
     com_param_t com_param;
     com_handle_t com_handle;
+    dev_attr_t dev_attr;
 
     if(err = parse_options(argc, argv, &fsisp_opt))
         return err;
@@ -227,30 +328,17 @@ int main(int argc, char **argv)
     printf("\r\n");
 
     printf("Connecting to device...");
-    
-    while(1)
-    {
-        if(send_packet(com_handle, TYPE_GET, 0x00, 0x80, NULL))
-            return -1;
-        if(com_recv(com_handle, rxbuf, sizeof(rxbuf), &rxlen, 50))
-            return -1;
 
-    #if 0
-        for(size_t i = 0; i < rxlen; i++)
-        {
-            printf("0x%.2x ", rxbuf[i]);
-        }
-    #endif
-        /* check packet CRC */
-        if(rxlen > sizeof(packet_header_t) && rxbuf[rxlen-1] == crc8_maxim(rxbuf, rxlen-1))
-        {
-            rxbuf[rxlen-1] = 0;
-            printf("OK");
-            printf("\r\n");
-            printf("MCU part number: %s\r\n", pkt->payload);
-            break;
-        }
-    }
+    memset(&dev_attr, 0x00, sizeof(dev_attr));
+    while(get_dev_attr(com_handle, &dev_attr) != 0);
+
+    printf("OK");
+    printf("\r\n");
+    printf("MCU part number: %s\r\n", dev_attr.mcu.part_number);
+    printf("MCU UUID: %s\r\n", dev_attr.mcu.uuid);
+    printf("Bootloader version: v%d.%d.%d\r\n", dev_attr.bldr.major_ver, dev_attr.bldr.minor_ver, dev_attr.bldr.build_ver);
+    printf("Bootloader flash adress: 0x%.8x\r\n", dev_attr.bldr.addr);
+    printf("Bootloader size: %d\r\n", dev_attr.bldr.size);
 
     printf("Closing to serial port...");
     if(com_close(com_handle))

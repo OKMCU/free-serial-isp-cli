@@ -142,18 +142,18 @@ int32_t com_recv(com_handle_t handle, uint8_t *buf, size_t size, size_t *rxcnt, 
     DWORD dwrxcnt;
     COMMTIMEOUTS timeouts = {0};
     DCB dcbSerialParam = {0};
-    float tmp;
+    //float tmp;
 
-    if(GetCommState(handle, &dcbSerialParam) == FALSE)
-        return -1;
+    //if(GetCommState(handle, &dcbSerialParam) == FALSE)
+    //    return -1;
 
-    tmp = ((1.0f/(float)dcbSerialParam.BaudRate)*1000.0f*1.0f+0.5f);
-    if(tmp < 1.0f) tmp = 1.0f;
-    timeouts.ReadIntervalTimeout = (DWORD)tmp;
+    //tmp = ((1.0f/(float)dcbSerialParam.BaudRate)*1000.0f*1.0f+0.5f);
+    //if(tmp < 1.0f) tmp = 1.0f;
+    timeouts.ReadIntervalTimeout = 0;
     timeouts.ReadTotalTimeoutConstant = (DWORD)timeout;
-    tmp = ((1.0f/(float)dcbSerialParam.BaudRate)*1000.0f*11.0f+0.5f);
-    if(tmp < 1.0f) tmp = 1.0f;
-    timeouts.ReadTotalTimeoutMultiplier = (DWORD)tmp;
+    //tmp = ((1.0f/(float)dcbSerialParam.BaudRate)*1000.0f*11.0f+0.5f);
+    //if(tmp < 1.0f) tmp = 1.0f;
+    timeouts.ReadTotalTimeoutMultiplier = 0;
     timeouts.WriteTotalTimeoutConstant = 0;
     timeouts.WriteTotalTimeoutMultiplier = 0;
 
