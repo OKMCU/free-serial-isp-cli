@@ -1,9 +1,20 @@
 fsisp --version[-v]
-fsisp --help[-h]
-fsisp --connect[-c] --port[-p] COM1 --baudrate[-b] 115200
+      --help[-h]
+      --port[-p] COM1 
+      --baudrate[-b] 115200
 
-erase --chip --aprom --eeprom
+command list:
 
-load --aprom aprom.hex --eeprom eeprom.hex
+help <command>
 
-save --aprom aprom.hex --eeprom eeprom.hex
+connect
+
+erase --chip[-c]
+      --aprom[-a]
+      --eeprom[-e]
+load  --aprom[-a] <file>
+      --eeprom[-e] <file>
+save  --aprom[-a] <file>
+      --eeprom[-e] <file>
+
+quit
